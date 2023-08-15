@@ -20,6 +20,7 @@ class Graph(object):
         for char in reserved:
             self.chars.remove(char)
         self.verbose = verbose
+        self.ops = reserved
         self.nodes = {}
         self.const_cache = {}
         self.set_cache = {}
@@ -68,10 +69,11 @@ class Graph(object):
         sval = self.new_node_with_cache('2', cval, self.set_cache, label, 'set')
         self.add(label, sval, cont)
 
-    def gen_if(self, label, src0, src1, taken, cont):
+    def gen_if(self, label, src0, src1, taken, cont, if_addr=None):
         cval = self.new_const_with_cache(src0, src1, True, label)
         bval = self.new_node_with_cache(cval, taken, self.branch_cache, label, 'branch')
-        ival = self.new_node_with_cache('0', bval, self.if_cache, label, 'if')
+        type_ = '0' if if_addr is None else Const(if_addr)
+        ival = self.new_node_with_cache(type_, bval, self.if_cache, label, 'if')
         self.add(label, ival, cont)
 
     def dump(self):
@@ -90,6 +92,19 @@ class Graph(object):
                 stack.append(self.nodes[node][1])
                 stack.append(self.nodes[node][0])
         return ret
+
+    def reachables(self):
+        nodes = set()
+        stack = ['0']
+        while len(stack) > 0:
+            node = stack.pop()
+            if isinstance(node, Const):
+                continue
+            if node not in nodes:
+                nodes.add(node)
+                stack.append(self.nodes[node][1])
+                stack.append(self.nodes[node][0])
+        return nodes
 
     def calc_addrs(self):
         self.addrs = {}
@@ -119,6 +134,88 @@ class Graph(object):
             if self.verbose:
                 print(trace)
 
+    def replace_if(self):
+        for (_, taken), bval in self.branch_cache.items():
+            if ('0', bval) not in self.if_cache.keys():
+                continue
+            ival = self.if_cache[('0', bval)]
+            cval = self.nodes[bval][0]
+            node0 = self.nodes[cval][0]
+            node1 = self.nodes[cval][1]
+            addr0 = node0.bits if isinstance(node0, Const) else self.addrs[node0]
+            addr1 = node1.bits if isinstance(node1, Const) else self.addrs[node1]
+            for op in self.ops:
+                if op in ('0', '1', '2', '3'):
+                    continue
+                if self.nodes[op][1] != taken:
+                    continue
+                type_ = self.nodes[self.nodes[op][0]][0]
+                args = self.nodes[self.nodes[op][0]][1]
+                if self.addrs[args] != addr1:
+                    continue
+                if type_ == '2':
+                    if addr0 != '':
+                        continue
+                else:
+                    if addr0 == '':
+                        continue
+                    if type_ == '0':
+                        if self.verbose:
+                            print(f'replacing if {ival} to {op}.prev failed, consider replacing {op}.type to Const({addr0})')
+                        continue
+                    if addr0 != (self.addrs[type_] if type_ in self.addrs.keys() else type_.bits):
+                        continue
+                for prev in self.ops:
+                    if self.nodes[prev][1] == op:
+                        break
+                else:
+                    for prev in self.branch_cache.values():
+                        if self.nodes[prev][1] == op:
+                            break
+                if self.verbose:
+                    print(f'replacing if {ival} to {prev}')
+                self.rename_label(ival, prev)
+                self.if_cache[('0', bval)] = prev
+                if bval not in self.reachables():
+                    if self.verbose:
+                        print(f'removing {bval}')
+                    del self.nodes[bval]
+                    del self.addrs[bval]
+                    self.chars = [bval] + self.chars
+                    if cval not in self.reachables():
+                        if self.verbose:
+                            print(f'removing {cval}')
+                        del self.nodes[cval]
+                        del self.addrs[cval]
+                        self.chars = [cval] + self.chars
+                break
+
+    def replace_const(self):
+        for (addr0, addr1), from_ in self.const_cache.items():
+            for to, (node0, node1) in self.nodes.items():
+                if to in ('0', '1', '3'):
+                    continue
+                if node1 not in self.addrs.keys() or addr1 != self.addrs[node1]:
+                    continue
+                if to in self.if_cache.values():
+                    if node0 == '0' and addr0 != '':
+                        if self.verbose:
+                            print(f'replacing const {from_} to {to} failed, consider replacing {to}.type to Const({addr0})')
+                        continue
+                    elif isinstance(node0, Const):
+                        if addr0 != node0.bits:
+                            continue
+                    else:
+                        if addr0 != self.addrs[node0]:
+                            continue
+                elif node0 not in self.addrs.keys() or addr0 != self.addrs[node0]:
+                    continue
+                if self.verbose:
+                    print(f'replacing const {from_}("{addr0}", "{addr1}") to {to}')
+                self.rename_label(from_, to)
+                self.const_cache[(addr0, addr1)] = to
+                break
+
     def dump_addrs(self):
         for node, (node0, node1) in self.nodes.items():
             if node0 in self.addrs.keys():
@@ -139,6 +236,13 @@ class Graph(object):
         self.calc_addrs()
         if self.verbose:
             self.dump_addrs()
+        self.replace_if()
+        if self.verbose:
+            self.dump_addrs()
+        self.replace_const()
+        if self.verbose:
+            self.dump_addrs()
+
         consts = {}
         for node, addr in self.addrs.items():
             if addr not in consts:
