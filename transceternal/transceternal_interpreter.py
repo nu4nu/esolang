@@ -132,7 +132,7 @@ def run(src, input_, verbose=False):
             if verbose:
                 print(f'{nodename(pc)}: set {addrname(d, True)} {addrname(s)}')
             set_(d, get(s))
-            root[0][1] = pc[1]
+            root[0][1] = root[0][1][1]
         elif type_ == id(root[0][0][1]):
             d = addr(node[0])
             s0 = addr(node[1][0])
@@ -140,7 +140,7 @@ def run(src, input_, verbose=False):
             if verbose:
                 print(f'{nodename(pc)}: add {addrname(d, True)} ({addrname(s0)}, {addrname(s1)})')
             add(d, get(s0), get(s1))
-            root[0][1] = pc[1]
+            root[0][1] = root[0][1][1]
         else:
             s0 = addr(node[0][0])
             s1 = addr(node[0][1])
@@ -149,7 +149,7 @@ def run(src, input_, verbose=False):
             if id(get(s0)) == id(get(s1)):
                 root[0][1] = node[1]
             else:
-                root[0][1] = pc[1]
+                root[0][1] = root[0][1][1]
 
     output = addr(root[1])
 
