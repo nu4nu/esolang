@@ -6,6 +6,9 @@ class Const(object):
     def __init__(self, bits):
         self.bits = bits
 
+    def __repr__(self):
+        return f'Const("{self.bits}")'
+
 class Graph(object):
     def __init__(self, reserved, verbose=False):
         # Preferring printable 1-byte characters in [33...126] for debuggability
@@ -40,7 +43,7 @@ class Graph(object):
             ret = self.new(node0, node1)
             cache[sig] = ret
             if self.verbose:
-                print(f'{label}: add {type_} node {ret}')
+                print(f'{label}: add {type_} node {ret} ({node0}, {node1})')
             return ret
 
     def new_const_with_cache(self, addr0, addr1, is_swappable, label):
@@ -81,21 +84,19 @@ class Graph(object):
         ret = ''
         while len(stack) > 0:
             node = stack.pop()
-            if node in nodes:
-                ret += node
-            else:
+            ret += node
+            if node not in nodes:
                 nodes.add(node)
-                ret += node
                 stack.append(self.nodes[node][1])
                 stack.append(self.nodes[node][0])
         return ret
 
-    def gen_consts(self):
-        consts = {}
+    def calc_addrs(self):
+        self.addrs = {}
         for node in self.nodes:
             node0, node1 = self.nodes[node]
             if node == '2':
-                consts[''] = '2'
+                self.addrs['2'] = ''
                 continue
             if node in ('0', '1', '3'):
                 continue
@@ -104,12 +105,10 @@ class Graph(object):
             trace = [node, node1]
             while True:
                 if isinstance(node1, Const):
-                    if s + node1.bits not in consts:
-                        consts[s + node1.bits] = node
+                    self.addrs[node] = s + node1.bits
                     break
                 if node1 == '2' or node1 in visited:
-                    if s not in consts:
-                        consts[s] = node
+                    self.addrs[node] = s
                     break
                 if node1 in ('0', '1', '3'):
                     break
@@ -119,6 +118,31 @@ class Graph(object):
                 trace.append(node1)
             if self.verbose:
                 print(trace)
+
+    def dump_addrs(self):
+        for node, (node0, node1) in self.nodes.items():
+            if node0 in self.addrs.keys():
+                node0str = f'"{self.addrs[node0]}"({node0})'
+            elif isinstance(node0, Const):
+                node0str = f'"{node0.bits}"'
+            else:
+                node0str = f'{node0}'
+            if node1 in self.addrs.keys():
+                node1str = f'"{self.addrs[node1]}"({node1})'
+            elif isinstance(node1, Const):
+                node1str = f'"{node1.bits}"'
+            else:
+                node1str = f'{node1}'
+            print(f'{node}: ({node0str}, {node1str})')
+
+    def gen_consts(self):
+        self.calc_addrs()
+        if self.verbose:
+            self.dump_addrs()
+        consts = {}
+        for node, addr in self.addrs.items():
+            if addr not in consts:
+                consts[addr] = node
 
         if self.verbose:
             for const, node in consts.items():
@@ -166,6 +190,31 @@ class Graph(object):
                 node1 = consts[node1.bits]
             self.nodes[node] = (node0, node1)
 
+    def rename_label(self, from_, to, is_swap=False):
+        newnodes = {}
+        for node, (node0, node1) in self.nodes.items():
+            if node0 == from_:
+                node0 = to
+            elif is_swap and node0 == to:
+                node0 = from_
+            if node1 == from_:
+                node1 = to
+            elif is_swap and node1 == to:
+                node1 = from_
+            if is_swap:
+                if node == from_:
+                    node = to
+                elif node == to:
+                    node = from_
+            else:
+                if node == from_:
+                    # TODO: Clean up cache
+                    self.chars = [from_] + self.chars
+                    del self.addrs[from_]
+                    continue
+            newnodes[node] = (node0, node1)
+        self.nodes = newnodes
+
     def swap(self):
         counts = {}
         for node0, node1 in self.nodes.values():
@@ -182,20 +231,4 @@ class Graph(object):
         assert len(multis) <= len(ones)
         for i, dest in enumerate(multis):
             src = ones[i]
-            newnodes = {}
-            for node, (node0, node1) in self.nodes.items():
-                if node0 == src:
-                    node0 = dest
-                elif node0 == dest:
-                    node0 = src
-                if node1 == src:
-                    node1 = dest
-                elif node1 == dest:
-                    node1 = src
-                if node == src:
-                    newnodes[dest] = (node0, node1)
-                elif node == dest:
-                    newnodes[src] = (node0, node1)
-                else:
-                    newnodes[node] = (node0, node1)
-            self.nodes = newnodes
+            self.rename_label(src, dest, True)
