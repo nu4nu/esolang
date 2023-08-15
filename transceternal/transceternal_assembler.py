@@ -99,7 +99,7 @@ class Graph(object):
                 continue
             if node in ('0', '1', '3'):
                 continue
-            s = '0' if node0 == '2' else '1'
+            s = '0' if node0 == '2' or (isinstance(node0, Const) and node0.bits == '') else '1'
             visited = {node}
             trace = [node, node1]
             while True:
@@ -115,7 +115,7 @@ class Graph(object):
                     break
                 visited.add(node1)
                 node0, node1 = self.nodes[node1]
-                s += '0' if node0 == '2' else '1'
+                s += '0' if node0 == '2' or (isinstance(node0, Const) and node0.bits == '') else '1'
                 trace.append(node1)
             if self.verbose:
                 print(trace)

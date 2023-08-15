@@ -18,10 +18,10 @@ graph = ta.Graph([chr(48 + n) for n in range(4)] +
 graph.add('0', '1', 'A')
 graph.add('1', '2', '1')
 graph.add('2', '3', '2')
-graph.add('3', '3', '3')
+graph.add('3', '2', '3')
 graph.gen_set('A', '010001', '1', 'B')
 graph.gen_if('B', '0001', '11110', 'v', 'C')
-graph.gen_set('C', '1', '00001', 'D')
+graph.gen_set('C', '', '110', 'D')
 graph.add('D', '2', '2')  # dummy if to generate 11...110
 graph.gen_set('v', '001', '1', 'w')
 graph.gen_set('w', '1110', '', 'x')
